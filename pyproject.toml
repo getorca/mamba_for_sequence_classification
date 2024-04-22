@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MambaForSequenceClassification"
+version = "0.0.1"
+requires-python = ">= 3.8"
+authors = [
+  {name = "Lawrence Stewart"},
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.urls]
+Homepage = "https://github.com/getorca/mamba_for_sequence_classification"
+Documentation = "https://github.com/getorca/mamba_for_sequence_classification"
+Repository = "https://github.com/getorca/mamba_for_sequence_classification"

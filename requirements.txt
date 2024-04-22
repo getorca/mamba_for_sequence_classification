@@ -1,0 +1,5 @@
+transformers~=4.40.0
+causal-conv1d>=1.2.0
+mamba-ssm>=1.2.0.post1
+accelerate>=0.29.3
+datasets>=2.18.0

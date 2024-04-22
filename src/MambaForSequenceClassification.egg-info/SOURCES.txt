@@ -1,0 +1,11 @@
+LICENSE
+README.md
+pyproject.toml
+requirements.txt
+src/__init__.py
+src/hf_mamba_classification.py
+src/MambaForSequenceClassification.egg-info/PKG-INFO
+src/MambaForSequenceClassification.egg-info/SOURCES.txt
+src/MambaForSequenceClassification.egg-info/dependency_links.txt
+src/MambaForSequenceClassification.egg-info/requires.txt
+src/MambaForSequenceClassification.egg-info/top_level.txt
