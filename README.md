@@ -1,4 +1,4 @@
-![Mamba for Sequence Classification]('https://raw.githubusercontent.com/getorca/mamba_for_sequence_classification/428b7a3f8ca1b990875de4fbf52a5cc7ce22f3d1/docs/mamba_for_sequence_classification_sm.jpeg')
+![Mamba for Sequence Classification](https://raw.githubusercontent.com/getorca/mamba_for_sequence_classification/428b7a3f8ca1b990875de4fbf52a5cc7ce22f3d1/docs/mamba_for_sequence_classification_sm.jpeg)
 
 # Mamba for Sequence Classification
 
