@@ -1,3 +1,5 @@
+![Mamba for Sequence Classification]('https://raw.githubusercontent.com/getorca/mamba_for_sequence_classification/428b7a3f8ca1b990875de4fbf52a5cc7ce22f3d1/docs/mamba_for_sequence_classification_sm.jpeg')
+
 # Mamba for Sequence Classification
 
 A huggingface Transformers compatibale implementation of Mamba for sequence classification. It add a Linear layer on top of the mamba model for classification. Offering a complete solution capitable with huggingface transformers. 
