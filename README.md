@@ -31,7 +31,9 @@ When sharing a model on huggingface we recommend including the `hf_mamba_classif
 
 ## Pretrained Models
 
-Coming soon. 
+|     Model    | Description | Metric |
+|:------------:|:-----------:|:------:|
+| [Mamba Finacial Headline Sentiment](https://huggingface.co/winddude/mamba_finacial_phrasebank_sentiment) | Trained on <https://huggingface.co/datasets/winddude/finacial_pharsebank_66agree_split> to classify finacial news sentence as positive, neutral or negative.            | 0.84 accuracy       |
 
 ## Citations
 

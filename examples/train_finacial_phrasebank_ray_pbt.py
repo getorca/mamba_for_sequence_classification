@@ -12,15 +12,19 @@ from ray.train.torch import TorchTrainer
 from ray.train import (
     ScalingConfig,
     ScalingConfig, 
-    CheckpointConfig
+    CheckpointConfig,
+    Checkpoint,
+    Result
 )
 from ray.train.huggingface.transformers import (
     RayTrainReportCallback,
     prepare_trainer,
 )
-from ray import tune, train
+from ray import tune, train, ResultGrid
 from ray.tune import Tuner
 from ray.tune.schedulers import PopulationBasedTraining
+from ray.tune.schedulers.pb2 import PB2
+import pandas as pd
 
 
 model_path = 'state-spaces/mamba-2.8b-hf'
@@ -33,6 +37,21 @@ def training_func(config):
     label2id = {"NEGATIVE": 0, "NEUTRAL": 1, "POSITIVE": 2}
 
     # model 
+    # model = MambaForSequenceClassification.from_pretrained(
+    #     model_path, 
+    #     num_labels=3, 
+    #     id2label=id2label, 
+    #     label2id=label2id,
+    #     use_cache=False  # This needs to be passed when using eval and training Mamba for sequence classification otherwise it will raise an error
+    # )
+    
+    # checkpoint = train.get_checkpoint()
+    # if checkpoint:
+    #     with checkpoint.as_directory() as checkpoint_dir:
+    #         model_path = f'/{checkpoint_dir}/checkpoint'
+    #         # start = checkpoint_dict["epoch"] + 1
+    #         # model.load_state_dict(checkpoint_dict["model_state"])
+    
     model = MambaForSequenceClassification.from_pretrained(
         model_path, 
         num_labels=3, 
@@ -80,10 +99,12 @@ def training_func(config):
         weight_decay=config.get("weight_decay", 0.01),
         evaluation_strategy="epoch",
         save_strategy="epoch",
-        load_best_model_at_end=False,
+        # logging_strategy="epoch",
+        # load_best_model_at_end=False,
         lr_scheduler_type="cosine",
         # optim='paged_adamw_8bit',
-        push_to_hub=False,        
+        push_to_hub=False,
+        disable_tqdm=True,  # declutter the output a little        
     )
 
     trainer = Trainer(
@@ -128,19 +149,47 @@ trainer = TorchTrainer(
 # api docs -> https://docs.ray.io/en/latest/tune/api/doc/ray.tune.schedulers.PopulationBasedTraining.html#ray.tune.schedulers.PopulationBasedTraining
 # ========================
 
-# perturbution_interval the frequency at which hyperparameters are perturbed or modified within the population.
+# perturbution_interval the frequency at which hyperparameters are perturbed or modified within the population. 
+# ?? It happens on the sample level per iteration - ?? maybe ??
 # Setting it too frequently can lead to excessive overhead from checkpointing models for evaluation and mutation.
 # Setting it too infrequently might slow down the process of finding optimal hyperparameters.
-perturbation_interval = 4  # see notes above 
-scheduler = PopulationBasedTraining(
+
+# Note: `checkpoint_interval` will not be perturbed (since it's not
+# included above), and it will be used to determine how many steps to take
+# between each checkpoint.
+# We recommend matching `perturbation_interval` and `checkpoint_interval`
+# (e.g. checkpoint every 4 steps, and perturb on those same steps)
+# or making `perturbation_interval` a multiple of `checkpoint_interval`
+# (e.g. checkpoint every 2 steps, and perturb every 4 steps).
+# This is to ensure that the lastest checkpoints are being used by PBT
+# when trials decide to exploit. If checkpointing and perturbing are not
+# aligned, then PBT may use a stale checkpoint to resume from.
+# ~ https://docs.ray.io/en/latest/tune/examples/includes/pbt_function.html
+            
+perturbation_interval = 3  # see notes above 
+# scheduler = PopulationBasedTraining(
+#     time_attr="training_iteration",
+#     perturbation_interval=perturbation_interval,
+#     metric="eval_accuracy",
+#     mode="max",
+#     hyperparam_mutations={
+#         "train_loop_config": {
+#             "weight_decay": tune.quniform(0.0, 0.03, 0.001),
+#             "learning_rate": tune.loguniform(5e-5, 2e-3),
+#             # Tests have shown weight_decay and learning_rate are two of the most import params to tune. 
+#             # you can also try tuning other hyperparams, such as batch size, grad accumulation steps and optim, and scheduler. 
+#         }
+#     },
+# )
+scheduler = PB2(
     time_attr="training_iteration",
     perturbation_interval=perturbation_interval,
-    metric="eval_accuracy",
-    mode="max",
-    hyperparam_mutations={
+    # metric="eval_accuracy",
+    # mode="max",
+    hyperparam_bounds={
         "train_loop_config": {
-            "weight_decay": tune.uniform(0.0, 0.03),
-            "learning_rate": tune.loguniform(5e-5, 2e-3),
+            "weight_decay": [0.0, 0.03],
+            "learning_rate": [5e-5, 2e-3],
             # Tests have shown weight_decay and learning_rate are two of the most import params to tune. 
             # you can also try tuning other hyperparams, such as batch size, grad accumulation steps and optim, and scheduler. 
         }
@@ -154,8 +203,8 @@ tuner = Tuner(
     trainer,
     param_space={  # this is search space for the tuning job. `train_loop_config` passed as `config` to `TorchTrainer`
         "train_loop_config": {
-            "learning_rate": tune.loguniform(5e-5, 2e-3),
-            "weight_decay": tune.uniform(0.0, 0.03),
+            "learning_rate": 9e-4,
+            "weight_decay": 0.03,
         }
     },
     # see: https://docs.ray.io/en/latest/train/api/doc/ray.train.RunConfig.html#ray.train.RunConfig for details
@@ -164,10 +213,10 @@ tuner = Tuner(
         # Stop when we've reached a threshold accuracy, or a maximum
         # training_iteration, whichever comes first
         # a training interation is done after the number of samples trains
-        stop={"eval_accuracy": 0.90, "training_iteration": 20}, 
+        stop={"eval_accuracy": 0.96, "training_iteration": 25}, 
         checkpoint_config=CheckpointConfig(
             checkpoint_score_attribute="eval_accuracy",
-            num_to_keep=4,
+            num_to_keep=7,  # this is the number of checkpoints to keep for each sample, (?? ideal should be higher than the checkpoints saved on each training run, maybe 2x? ??)
             checkpoint_score_order="max",
         ),
         storage_path="/files/tmp/ray_results",
@@ -175,8 +224,10 @@ tuner = Tuner(
     # see https://docs.ray.io/en/latest/tune/api/doc/ray.tune.TuneConfig.html for details
     tune_config=tune.TuneConfig(
         scheduler=scheduler,
-        num_samples=4, 
+        num_samples=4,
         reuse_actors=True,
+        metric="eval_accuracy",
+        mode="max",
     )
 )
 
@@ -185,9 +236,49 @@ result = tuner.fit()
 
 # Finally we load the best checkpoint and saving it in safe tensors.
 # ========================
-best_result = result.get_best_result("eval_accuracy", mode="max")
+# best_result = result_grid.get_best_result("eval_accuracy", mode="max", scope="all")
 print('Best Result:\n==================')
 print(f'{best_result}')
+
+breakpoint()
+
+# get the best checkpoint
+# at the time of writing there are a number of bugs in ray to load the best checkpoint
+best_result = None
+for idx, trial in enumerate(result._experiment_analysis.trials):
+    tmp_result = trial.run_metadata.checkpoint_manager.best_checkpoint_result
+    if best_result is None or tmp_result['eval_accuracy'] > best_result['eval_accuracy']:
+        best_result = tmp_result
+    
+print('Best Result:\n==================')
+print(f'{best_result}')
+
+## get the dataframes
+# df = result._experiment_analysis.trial_dataframes
+# df = pd.concat([x for x in df.values()])
+# df[['eval_accuracy', 'config/train_loop_config/learning_rate', 'config/train_loop_config/weight_decay', 'trial_id', 'checkpoint_dir_name']]
+# result.experiment_path
+# result.get_dataframe  # has the trail path in it
+
+
+# Load the best checkpoint and push to hub
+# Login with the huggingface cli https://huggingface.co/docs/transformers/en/model_sharing#setup first and change the destination
+# checkpoint: Checkpoint = best_result.checkpoint
+# with checkpoint.as_directory() as checkpoint_dir:
+#     checkpoint_path = os.path.join(checkpoint_dir, "checkpoint")
+#     model = MambaForSequenceClassification.from_pretrained(checkpoint_path)
+# model.push_to_hub('winddude/mamba_finacial_phrasebank_sentiment')
+    
+    
+# best_checkpoint = result.get_best_checkpoint("eval_accuracy", mode="max")
+# print('Best Checkpoint:\n==================')
+# print(best_checkpoint)
+# result.experiment_path
+# result._experiment_analysis.trials
+# best_result_df = result.get_dataframe(
+#     filter_metric="eval_accuracy", filter_mode="max"
+# )
+# print(best_result_df.to_markdown())
 
 # with best_result.checkpoint.as_directory() as checkpoint_dir:
 #     print('checkpoint_dir:', checkpoint_dir)
